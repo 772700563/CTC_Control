@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace CTC_Control.Classes.Helper
 {
     class SerializeHelper
-    {
+    {       
         /// <summary>
         /// 序列化
         /// </summary>

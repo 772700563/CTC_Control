@@ -14,6 +14,7 @@ using System.IO;
 using CTC_Control.Classes.Helper;
 using CTC_Control.Classes;
 using System.Threading;
+using System.Windows.Threading;
 
 namespace CTC_Control.ViewModel
 {
@@ -100,10 +101,76 @@ namespace CTC_Control.ViewModel
             set { dbConnected = value; RaisePropertyChanged(); }
         }
 
+        private int simCMD;
         /// <summary>
         /// 当前仿真命令: 0-停止，1-开始，2-暂停，3-继续
         /// </summary>
-        public int SimCMD;
+        public int SimCMD
+        {
+            get { return simCMD; }
+            set
+            {
+                simCMD = value;
+                switch (simCMD)
+                {
+                    case 0:
+                        SimStartEnable = true;
+                        SimPauseEnable = SimContiEnable = SimEndEnable = false;
+                        SimEnd = true;
+                        SimOn = false;
+                        //更新时间
+                        last_update_time = DateTime.Now;
+                        break;
+                    case 1:
+                        SimPauseEnable = SimEndEnable = true;
+                        SimStartEnable = SimContiEnable = false;
+                        SimOn = true;
+                        SimEnd = false;
+                        break;
+                    case 2:
+                        SimContiEnable = SimEndEnable = true;
+                        SimStartEnable = SimPauseEnable = false;
+                        SimOn = false;
+                        SimEnd = false;
+                        break;
+                    case 3:
+                        SimPauseEnable = SimEndEnable = true;
+                        SimStartEnable = SimContiEnable = false;
+                        SimOn = true;
+                        SimEnd = false;
+                        break;
+                }
+            }
+        }
+
+        //指示对应的按钮是否可用
+        private bool simStartEnable;
+        public bool SimStartEnable
+        {
+            get { return simStartEnable; }
+            set { simStartEnable = value;RaisePropertyChanged(); }
+        }
+
+        private bool simPauseEnable;
+        public bool SimPauseEnable
+        {
+            get { return simPauseEnable; }
+            set { simPauseEnable = value; RaisePropertyChanged(); }
+        }
+
+        private bool simContiEnable;
+        public bool SimContiEnable
+        {
+            get { return simContiEnable; }
+            set { simContiEnable = value; RaisePropertyChanged(); }
+        }
+
+        private bool simEndEnable;
+        public bool SimEndEnable
+        {
+            get { return simEndEnable; }
+            set { simEndEnable = value; RaisePropertyChanged(); }
+        }
 
         //指示是否正在进行仿真(仿真开始且未暂停)
         private bool simOn;
@@ -113,7 +180,7 @@ namespace CTC_Control.ViewModel
             set { simOn = value; RaisePropertyChanged(); }
         }
 
-        //指示是否正在进行结束(仿真结束按钮)
+        //指示是否已结束仿真(仿真结束按钮)
         private bool simEnd;
         public bool SimEnd
         {
@@ -154,8 +221,24 @@ namespace CTC_Control.ViewModel
         //仿真开始持续时间
         private int simInterv;
 
+        private DispatcherTimer local_time_timer;
+        //500 ms
+        private int tick_precis = 500;
+
         //线程列表
         List<Timer> timers;
+
+        //多车仿真器信息
+        private string infoText;
+        public string InfoText
+        {
+            get { return infoText; }
+            set { infoText = value; RaisePropertyChanged(); }
+        }
+
+        //上一次更新InfoText的时间（服务器时间）
+        private DateTime last_update_time;
+
         #endregion
 
         #region 命令
@@ -199,12 +282,18 @@ namespace CTC_Control.ViewModel
                 }
                 catch { }
             }
-            SimOn = false;
-            SimEnd = true;
+            SimCMD = 0;
             //启动线程更新界面时间
             simInterv = 0;
+            local_time_timer = new DispatcherTimer();
+            local_time_timer.Tick += new EventHandler(UpdateTime);
+            local_time_timer.Interval = new TimeSpan(0, 0, 0, 0, tick_precis);
+            local_time_timer.Start();
+
             timers = new List<Timer>();
-            timers.Add(new Timer(new TimerCallback(UpdateTime), null, 0, 50));
+            //timers.Add(new Timer(new TimerCallback(UpdateTime), null, 0, 500));
+            //启动线程读取多车仿真器传输的信息
+            timers.Add(new Timer(new TimerCallback(UpdateInfoText), null, 0, 1000));
         }
 
         private void IniteCommands()
@@ -228,11 +317,10 @@ namespace CTC_Control.ViewModel
             }          
         }
 
+        //仿真开始
         private void SimStartFunc()
         {
             SimCMD = 1;
-            SimOn = true;
-            SimEnd = false;
             SimText = "仿真运行中";
             //设置时间
             simInterv = 0;
@@ -240,31 +328,31 @@ namespace CTC_Control.ViewModel
             WriteInfoToDB();
         }
 
+        //仿真暂停
         private void SimPauseFunc()
         {
             SimCMD = 2;
-            SimOn = false;
             SimText = "仿真暂停";
             WriteInfoToDB();
         }
 
+        //仿真继续
         private void SimContiFunc()
         {
             SimCMD = 3;
-            SimOn = true;
             SimText = "仿真运行中";
             WriteInfoToDB();
         }
 
+        //仿真结束
         private void SimEndFunc()
         {
             SimCMD = 0;
-            SimOn = false;
-            SimEnd = true;
             SimText = "仿真未运行";
             WriteInfoToDB();
         }
 
+        //登录按钮功能
         private void LogInFunc()
         {
             db = DBHELPER.OpenConn(IpAddress, Port, "ORCL", User, Password);
@@ -290,6 +378,7 @@ namespace CTC_Control.ViewModel
             }
         }
 
+        //注销按钮功能
         private void LogOutFunc()
         {
             if (MessageBox.Show("是否关闭数据库连接？", "通知", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
@@ -310,23 +399,53 @@ namespace CTC_Control.ViewModel
         {
             string sqlstr = string.Format("insert into {0}.\"{1}\"(\"Time\",\"SimTime\",\"CTCTime\",\"SimCMD\",\"SimSpeed\") " +
                 "values(", User, "FromMainControl");
-            sqlstr += string.Format("to_date('{0}','yyyy-MM-dd hh24:mi:ss'),", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-            sqlstr += string.Format("to_date('{0}','yyyy-MM-dd hh24:mi:ss'),", SimTime.ToString("yyyy-MM-dd HH:mm:ss"));
-            sqlstr += string.Format("to_date('{0}','yyyy-MM-dd hh24:mi:ss'),", LocalTime.ToString("yyyy-MM-dd HH:mm:ss"));
+            sqlstr += CommonHelper.DateToOracleDate(DateTime.Now) + ",";
+            sqlstr += CommonHelper.DateToOracleDate(SimTime) + ",";
+            sqlstr += CommonHelper.DateToOracleDate(LocalTime) + ",";
             sqlstr += SimCMD + ",";
             sqlstr += SimSpeedItems[SimSpeedIdx].Content.ToString() + ")";
             DBHELPER.ExcuteDataTable(db, sqlstr);
         }
 
         //更新局部时间
-        private void UpdateTime(object obj)
+        private void UpdateTime(object obj, EventArgs e)
         {
             //仿真正在进行
             if (SimOn)
             {
-                simInterv += 50;
+                simInterv += tick_precis;
                 LocalTime = SimTime.AddMilliseconds(simInterv);
             }
+        }
+
+        //更新多车仿真器传输来的文本信息
+        private void UpdateInfoText(object obj)
+        {
+            if(DbConnected)
+            {
+                {
+                    string sqlstr = string.Format("insert into {0}.\"{1}\"(\"Time\",\"CTCTime\",\"TextInfo\") values" +
+                    "({2},{3},'{4}')", User, "ToMainControl",
+                    CommonHelper.DateToOracleDate(DateTime.Now), CommonHelper.DateToOracleDate(LocalTime),
+                    "test");
+                    DBHELPER.ExcuteDataTable(db, sqlstr);
+                }
+
+                //只有仿真进行过程中才会从数据库读取信息
+                if (SimOn)
+                {
+                    //返回ToMainControl表中时间在last_update_time之后的所有信息
+                    string sqlstr = string.Format("select * from {0}.\"{1}\" where \"Time\" > {2}",
+                        User, "ToMainControl", CommonHelper.DateToOracleDate(last_update_time));
+                    var info_table = DBHELPER.ExcuteDataTable(db, sqlstr);
+                    var rows = info_table.Rows;
+                    for (int i = 0; i < rows.Count; i++)
+                    {
+                        InfoText += string.Format("{0}  {1}\n", rows[i]["Time"], rows[i]["TextInfo"]);
+                    }
+                    last_update_time = DateTime.Now;
+                }
+            }         
         }
         #endregion
     }

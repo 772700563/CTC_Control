@@ -115,21 +115,25 @@
                                 Margin="5"
                                 Command="{Binding SimStartCMD}"
                                 Header="开始"
+                                IsEnabled="{Binding SimStartEnable}"
                                 LargeIcon="Pictures/SimStart.png" />
                             <Fluent:Button
                                 Margin="5"
                                 Command="{Binding SimPauseCMD}"
                                 Header="暂停"
+                                IsEnabled="{Binding SimPauseEnable}"
                                 LargeIcon="Pictures/SimPause.png" />
                             <Fluent:Button
                                 Margin="5"
                                 Command="{Binding SimContiCMD}"
                                 Header="继续"
+                                IsEnabled="{Binding SimContiEnable}"
                                 LargeIcon="Pictures/SimConti.png" />
                             <Fluent:Button
                                 Margin="5"
                                 Command="{Binding SimEndCMD}"
                                 Header="结束"
+                                IsEnabled="{Binding SimEndEnable}"
                                 LargeIcon="Pictures/SimEnd.png" />
                         </Fluent:RibbonGroupBox>
                         <Fluent:RibbonGroupBox Header="参数设置" IsEnabled="{Binding SimEnd}">
@@ -303,7 +307,15 @@
                         </Style>
                     </TabControl.Resources>
                     <TabItem Header="数据库" />
-                    <TabItem Header="文本信息" />
+                    <TabItem Header="文本信息">
+                        <ScrollViewer>
+                            <TextBox
+                            Background="Black"
+                            Foreground="White"
+                            IsReadOnly="True"
+                            Text="{Binding InfoText}" />
+                        </ScrollViewer>
+                    </TabItem>
                 </TabControl>
 
                 <Fluent:StatusBar

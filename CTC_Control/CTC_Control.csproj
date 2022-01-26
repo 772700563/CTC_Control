@@ -163,6 +163,7 @@
     </ApplicationDefinition>
     <Compile Include="Classes\Converters\NotConv.cs" />
     <Compile Include="Classes\DBConSetInfo.cs" />
+    <Compile Include="Classes\Helper\CommonHelper.cs" />
     <Compile Include="Classes\Helper\DBHELPER.cs" />
     <Compile Include="Classes\Helper\PasswordBoxHelper.cs" />
     <Compile Include="Classes\Helper\RootPathHelper.cs" />
